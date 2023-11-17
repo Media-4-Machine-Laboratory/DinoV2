@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 
 RUN apt-get update -y && apt-get -y install sudo git software-properties-common python3.9 python3-pip libgl1-mesa-glx
 
