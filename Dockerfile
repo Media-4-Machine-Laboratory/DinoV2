@@ -6,6 +6,6 @@ RUN mkdir src
 WORKDIR /src
 RUN git clone https://github.com/Media-4-Machine-Laboratory/DinoV2.git
 
-WORKDIR /src/dinov2
+WORKDIR /src/DinoV2
 RUN pip3 install -r requirements.txt
 RUN pip3 install -e .
