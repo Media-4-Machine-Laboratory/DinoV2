@@ -273,6 +273,8 @@ print(np.mean(np.array(jet_mse_values)))
 col_names = files
 data = [mse_values, grabcut_mse_values, jet_mse_values]
 DF = pd.DataFrame(data, columns=col_names)
+DF.index = ["Normal", "Grabcut", "Jetson-Inference"]
+DF.to_csv("MSE.csv")
 
 print(DF)
 print('-----------------\nMeans of MSE')
