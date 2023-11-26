@@ -1,0 +1,1 @@
+Ground Truth에 대한 Depth Map을 기반으로 만든 Mask가 저장될 예정임.
