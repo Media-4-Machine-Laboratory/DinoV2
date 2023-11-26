@@ -86,7 +86,7 @@ def render_depth(values, colormap_name="gray") -> Image:
 
 ###############################
 
-BACKBONE_SIZE = "small" # in ("small", "base", "large" or "giant")
+BACKBONE_SIZE = "large" # in ("small", "base", "large" or "giant")
 
 backbone_archs = {
     "small": "vits14",
