@@ -15,6 +15,12 @@ from mmcv.runner import load_checkpoint
 from dinov2.eval.depth.models import build_depther
 from PIL import Image
 
+############################### 파일 이름 지정.
+
+files = ["0000","0001","0002","0003","0004","0005","0006","0007","0008","0013","0014","0017","0020","0024","0029","0033","0034","0038"]
+
+###############################
+
 class CenterPadding(torch.nn.Module):
     def __init__(self, multiple):
         super().__init__()
@@ -80,7 +86,7 @@ def render_depth(values, colormap_name="gray") -> Image:
 
 ###############################
 
-BACKBONE_SIZE = "large" # in ("small", "base", "large" or "giant")
+BACKBONE_SIZE = "small" # in ("small", "base", "large" or "giant")
 
 backbone_archs = {
     "small": "vits14",
@@ -120,8 +126,6 @@ model.cuda()
 
 ###############################
 
-files = ["0000","0001","0002","0003","0004","0005","0006","0007","0008","0013","0014","0017","0020","0024","0029","0033","0034","0038"]
-
 images = []
 depthimages = []
 GT_normed_map = []
@@ -134,28 +138,6 @@ for i in range(len(files)) :
     GT_min = GT_map.min(); GT_max = GT_map.max()
 
     GT_normed_map.append((GT_map - GT_min) / (GT_max - GT_min))
-
-###############################
-
-grabcutimages = []
-
-for i in range(len(images)) :
-
-    be_converted_img = np.array(images[i])	# 영상 읽기
-
-    be_converted_img = cv.cvtColor(be_converted_img, cv.COLOR_BGR2RGB) # OpenCV로 읽어왔기 때문에 BGR을 RGB로 해야 원래 색으로 변환됨.
-
-    rc = (100,100,400,380)      # 대략적인 얼굴 Grabcut 영역 생성.
-
-    mask=np.zeros((be_converted_img.shape[0],be_converted_img.shape[1]),np.uint8)
-    mask[:,:]=cv.GC_PR_BGD		# 모든 화소를 배경일 것 같음으로 초기화
-
-    cv.grabCut(be_converted_img, mask, rc, None, None, 5, cv.GC_INIT_WITH_RECT) # 생성한 영역을 기반으로 사각형 영역을 Grabcut.
-    mask2 = np.where((mask == 0) | (mask == 2), 0, 1).astype('uint8') # 추정된 배경과 물체를 각각 실제 배경과 물체로 확정.
-    grab=np.where(mask2[:,:,np.newaxis] == 0, 255, be_converted_img*mask2[:,:,np.newaxis]) # 배경이면 255(흰색), 아니면 기존값(기존값 * 1)
-
-    cv.imwrite('/src/output/grabcut/GC_image_' + files[i] + '.jpg', grab) # 파일 저장.
-    grabcutimages.append(load_image("/src/output/grabcut/GC_image_" + files[i] + ".jpg")) # 리스트에 저장된 파일들 삽입.
 
 ###############################
 
@@ -183,98 +165,42 @@ for i in range(len(images)) :
 
 ###############################
 
-grabcut_estimated_depth_map = [] # Grabcut 한 이미지를 바탕으로 추출할 Depth를 보관할 리스트.
-grabcut_estimated_depth_normed_map = [] # 추출한 Depth를 정규화한 값을 저장할 리스트.
-
-for i in range(len(grabcutimages)) :
-    scale_factor = 1
-    rescaled_image = grabcutimages[i].resize((scale_factor * grabcutimages[i].width, scale_factor * grabcutimages[i].height))
-    transformed_image = transform(rescaled_image)
-    batch = transformed_image.unsqueeze(0).cuda() # Make a batch of one image
-
-    with torch.inference_mode():
-        result = model.whole_inference(batch, img_meta=None, rescale=True)
-
-    grabcut_estimated_depth = np.array(np.array(render_depth(result.squeeze().cpu()))[:,:,0]) # 추출한 Depth 저장.
-    grabcut_estimated_depth_min = grabcut_estimated_depth.min(); grabcut_estimated_depth_max = grabcut_estimated_depth.max() # Depth의 min, max값 저장.
-    grabcut_estimated_depth_normed_map.append((grabcut_estimated_depth - grabcut_estimated_depth_min) # min - max 정규화 실시 및 리스트에 저장.
-                                      / (grabcut_estimated_depth_max - grabcut_estimated_depth_min))
-    
-    cv.imwrite('/src/output/dinov2/GC_' + files[i] + '.jpg', grabcut_estimated_depth)
-
-###############################
-
 GTmasks = []
 
 for i in range(len(files)) :
     GTmasks.append(np.where(GT_normed_map[i] > 0.6, 0, 1).astype('uint8')) # 특정 거리 이상은 배경이라 간주할 mask 저장.
-    mask2 = GTmasks[i] * 255
-    cv.imwrite('/src/output/mask/mask_'+ files[i] + '.jpg', mask2)
-
+    
+    # Image에 Mask를 씌운 결과물을 출력하고 싶다면 아래를 주석 해제.
+    # mask2 = GTmasks[i] * 255
+    # cv.imwrite('/src/output/mask/mask_'+ files[i] + '.jpg', mask2)
     # cv.imwrite('/src/output/mask/img_masked_' + files[i] + '.jpg' , cv.cvtColor(images[i] * GTmasks[i][:,:,np.newaxis], cv.COLOR_BGR2RGB))
     # cv.imwrite('/src/output/mask/gc_masked_' + files[i] + '.jpg' , cv.cvtColor(grabcutimages[i] * GTmasks[i][:,:,np.newaxis], cv.COLOR_BGR2RGB))
 
 ###############################
 
 mse_values = []
+masked_mse_values = []
 
 for i in range(len(files)) :
     mse = np.mean(np.square(GT_normed_map[i] - estimated_depth_normed_map[i]))
     print(files[i], ' Unmasked : ', mse)
-    mse = np.mean(np.square(GT_normed_map[i] - estimated_depth_normed_map[i])[GTmasks[i] == 1])
-    print(files[i], ' Masked : ', mse)
+    masked_mse = np.mean(np.square(GT_normed_map[i] - estimated_depth_normed_map[i])[GTmasks[i] == 1])
+    print(files[i], ' Masked : ', masked_mse)
+
     mse_values.append(mse)
+    masked_mse_values.append(masked_mse)
 
 print('---------------------')
-print(np.mean(np.array(mse_values)))
-
-###############################
-
-grabcut_mse_values = []
-
-for i in range(len(files)) :
-    grabcut_mse = np.mean(np.square(GT_normed_map[i] - grabcut_estimated_depth_normed_map[i]))
-    print(files[i], ' Unmasked : ', grabcut_mse)
-    grabcut_mse = np.mean(np.square(GT_normed_map[i] - grabcut_estimated_depth_normed_map[i])[GTmasks[i] == 1])
-    print(files[i], 'Masked :', grabcut_mse)
-
-    # grabcut_mse_values.append(((GT_normed_map[i] - grabcut_estimated_depth_normed_map[i]) ** 2).sum() / (GT_normed_map[i].shape[0] * GT_normed_map[i].shape[1]))
-    # print(grabcut_mse_values[i])
-    
-    grabcut_mse_values.append(grabcut_mse)
-
-print('---------------------')
-print(np.mean(np.array(grabcut_mse_values)))
-
-###############################
-
-jetson_estimated_normed_map = []
-jet_mse_values = []
-
-for i in range(len(files)) :
-    jetson_depth = np.array(Image.open("/src/output/jetson-inference/ji_estimate_" + files[i] + ".jpg").convert("L"))
-    jetson_depth_min = jetson_depth.min(); jetson_depth_max = jetson_depth.max()
-    jetson_estimated_normed_map.append((jetson_depth - jetson_depth_min) / (jetson_depth_max - jetson_depth_min))
-
-for i in range(len(files)) :
-    jetson_mse = np.mean(np.square(GT_normed_map[i] - jetson_estimated_normed_map[i]))
-    print(files[i], ' Unmasked : ', jetson_mse)
-    jetson_mse = np.mean(np.square(GT_normed_map[i] - jetson_estimated_normed_map[i])[GTmasks[i] == 1])
-    print(files[i], 'Masked :', jetson_mse)
-
-    jet_mse_values.append(jetson_mse)
-    print(jet_mse_values[i])
-
-print('-----------------------------')
-print(np.mean(np.array(jet_mse_values)))
+print('Unmasked DinoV2 MSE mean : ', np.mean(np.array(mse_values)))
+print('Masked DinoV2 MSE mean : ', np.mean(np.array(masked_mse_values)))
 
 ###############################
 
 col_names = files
-data = [mse_values, grabcut_mse_values, jet_mse_values]
+data = [mse_values, masked_mse_values]
 DF = pd.DataFrame(data, columns=col_names)
-DF.index = ["Normal", "Grabcut", "Jetson-Inference"]
-DF.to_csv("MSE.csv")
+DF.index = ["DinoV2", "Masked DinoV2"]
+DF.to_csv("DinoV2_MSE.csv")
 
 print(DF)
 print('-----------------\nMeans of MSE')
